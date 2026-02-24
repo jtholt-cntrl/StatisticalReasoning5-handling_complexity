@@ -1,0 +1,254 @@
+---
+title: "https://github.com/jtholt-cntrl/StatisticalReasoning5-handling_complexity.git"
+author: "Joshua Holt and Luis Rouzaud"
+format: pdf
+editor: visual
+---
+
+# 1. Interactions
+
+## Q1.1) The relationship shown in the comic is not a simple linear regression. Therefor we would need to use a GLM or a multilevel model to describe the different trends.
+
+## Q1.2) 
+
+### Bread dough rises because of yeast - The impact of yeast on the rate of bread rising would increase with time.
+
+### Education leads to higher income - Job opportunity can increase due to higher education which leads to higher income. Without a strong education, competitive job opportunities will not be achievable.
+
+### Gasoline makes a car go - Engines convert gas to energy which powers the drive train and makes the car go. If the engine is faulty, the gas can't make the car go.
+
+```{r}
+library(tidyverse) # For data wrangling
+library(brms) # For stats
+library(palmerpenguins) # For the data
+library(ggeffects) # for plotting model predictions
+
+# Store the data as penguins
+penguins <- palmerpenguins::penguins
+
+# Look at the column names
+penguins %>% colnames()
+```
+
+## Q1.3)
+
+```{r}
+#Assign new dataframe
+penguins.AC <- penguins |>
+  #Filter by species
+  filter(species == "Adelie"|
+         species == "Chinstrap")
+
+penguins.AC
+```
+
+## Q1.4)
+
+```{r}
+fl.bms <- penguins.AC|>
+  ggplot(aes(y = flipper_length_mm, x = body_mass_g, color = species))+
+  geom_smooth(method = "lm")
+  
+
+fl.bms
+```
+
+## Q1.5) I think that the effect of body mass on flipper length is conditional on species. The slopes of the best fit lines are distinctly different.
+
+## Q1.6) Yes our model ran correctly, all the posterior distributions are normal, the markov chains all overlap, and the Rhat is around 1 for all of them.
+
+```{r}
+m.flip.mass.spp.additive <-
+  brm(data = penguins.AC, #Give the model the tibble
+      family = gaussian, #Tell model what type of distribution
+      flipper_length_mm ~ 0 + species + body_mass_g, #Specifying the model
+      iter = 2000, warmup = 1000, chains = 4, cores = 4, #Markov chain parameters
+      seed = 4, #Determines which random numbers
+      file = 'output/m.flip.mass.spp.additive') #saves it as an output
+
+print(m.flip.mass.spp.additive, digits = 4)
+plot(m.flip.mass.spp.additive)
+```
+
+```{r}
+preds.add <- predict_response(m.flip.mass.spp.additive,
+                          terms = c("body_mass_g", "species"))
+
+plot(preds.add, show_data = TRUE)
+```
+
+## Q1.7)
+
+### 1. Chinstraps have longer flippers by about 6 mm
+
+### 2. Body mass has a positive effect on flipper length, more specifically as the penguin increase 1 gram of body mass, flipper length is expected to increase by 0.0079 mm. The effect is distinctly different from 0 with the 95% CI being positive (0.0061, 0.0098).
+
+### 3. No, the effect foes not vary per species in the additive model. We tell this because the slopes are the same.
+
+```{r}
+# flipper length by body mass and species - INTERACTIVE model
+m.flip.mass.spp.interactive <- 
+  brm(data = penguins.AC, # Give the model the penguins data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      # First, we write the equation with a as an intercept and b as a slope next to body mass
+      bf(flipper_length_mm ~ 0 + a + b*body_mass_g,
+         # Then, we specify that we want our intercept, a, to vary with species
+         a ~ 0 + species,
+         # Next, we specify that we want our slope, b, to ALSO vary with species 
+         # (this is the interaction part!!)
+         b ~ 0 + species,
+         # Lastly, we tell it that we are writing in a particular notation
+         nl = TRUE),
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.flip.mass.spp.interactive")
+
+# Print out the model output with 4 digits to avoid the display rounding to zero
+print(m.flip.mass.spp.interactive, digits = 4)
+
+# Store posterior parameter estimates
+model_posterior_samples <- as_draws_df(m.flip.mass.spp.interactive)
+
+# Wrangle and then plot samples for the slopes (b) specifically
+model_posterior_samples %>% 
+  # Select the columns we care about (exclude the posterior estimates for the intercepts and sigma)
+  dplyr::select(b_b_speciesAdelie, b_b_speciesChinstrap) %>% 
+  # Pivot to long format for easy ggplotting
+  pivot_longer(cols = everything(),
+               names_to = "parameter",
+               values_to = "estimate") %>%
+  # Plot as a two overlapping histograms, with the fill colored by parameter
+  ggplot(aes(x = estimate, fill = parameter)) +
+  geom_histogram(alpha = 0.55, color = "black",
+                 # position = "identity" makes the histograms overlay each other instead of stack
+                 position = "identity") +
+  xlim(0, NA)
+
+preds.int <- predict_response(m.flip.mass.spp.interactive,
+                          terms = c("body_mass_g", "species"))
+
+plot(preds.int, show_data = TRUE)
+
+waic(m.flip.mass.spp.interactive)
+waic(m.flip.mass.spp.additive)
+loo(m.flip.mass.spp.interactive)
+loo(m.flip.mass.spp.additive)
+```
+
+## Q1.8)The interactive model has better predictive power since both waic (1390.5\<1395.3) and looic (1390.6 \< 1395.3) values were lower compared to the additive model.
+
+# 2. Do it yourself
+
+## Q2.1)
+
+```{r}
+bl.bds <- penguins.AC|>
+  ggplot(aes(y = bill_length_mm, x = bill_depth_mm, color = species))+
+  geom_smooth(method = "lm")
+  
+
+bl.bds
+```
+
+## Q2.2)
+
+```{r}
+# bill length by bill depth and species - INTERACTIVE model
+m.bl.bd.spp.interactive <- 
+  brm(data = penguins.AC, # Give the model the penguins data
+      # Choose a gaussian (normal) distribution
+      family = gaussian,
+      # Specify the model here. 
+      # First, we write the equation with a as an intercept and b as a slope next to body mass
+      bf(bill_length_mm ~ 0 + a + b*bill_depth_mm,
+         # Then, we specify that we want our intercept, a, to vary with species
+         a ~ 0 + species,
+         # Next, we specify that we want our slope, b, to ALSO vary with species 
+         # (this is the interaction part!!)
+         b ~ 0 + species,
+         # Lastly, we tell it that we are writing in a particular notation
+         nl = TRUE),
+      # Here's where you specify parameters for executing the Markov chains
+      # We're using similar to the defaults, except we set cores to 4 so the analysis runs faster than the default of 1
+      iter = 2000, warmup = 1000, chains = 4, cores = 4,
+      # Setting the "seed" determines which random numbers will get sampled.
+      # In this case, it makes the randomness of the Markov chain runs reproducible 
+      # (so that both of us get the exact same results when running the model)
+      seed = 4,
+      # Save the fitted model object as output - helpful for reloading in the output later
+      file = "output/m.bl.bd.spp.interactive")
+
+# Print out the model output with 4 digits to avoid the display rounding to zero
+print(m.bl.bd.spp.interactive, digits = 4)
+```
+
+## Q2.3) The Rhat for all predictors is close to 1, the posterior distributions are normal, and the chains all overlap, so we determined that our model ran correctly.
+
+## Q2.4)
+
+```{r}
+preds.int2 <- predict_response(m.bl.bd.spp.interactive,
+                          terms = c("bill_depth_mm", "species"))
+
+plot(preds.int2, show_data = TRUE)
+
+```
+
+## Q2.5)
+
+```{r}
+model_posterior_samples2 <- as_draws_df(m.bl.bd.spp.interactive)
+
+# Wrangle and then plot samples for the slopes (b) specifically
+model_posterior_samples2 %>% 
+  # Select the columns we care about (exclude the posterior estimates for the intercepts and sigma)
+  dplyr::select(b_b_speciesAdelie, b_b_speciesChinstrap) %>% 
+  # Pivot to long format for easy ggplotting
+  pivot_longer(cols = everything(),
+               names_to = "parameter",
+               values_to = "estimate") %>%
+  # Plot as a two overlapping histograms, with the fill colored by parameter
+  ggplot(aes(x = estimate, fill = parameter)) +
+  geom_histogram(alpha = 0.55, color = "black",
+                 # position = "identity" makes the histograms overlay each other instead of stack
+                 position = "identity") +
+  xlim(0, NA)
+```
+
+## Q2.6) 
+
+### 1. Bill Depth (mm) positively influences Bill Length for both species. For Adelie, an increase in 1 mm bill depth would lead to a 0.8601 mm increase in bill length and for Chinstraps, an increase of 1 mm in bill depth would lead to an increase of 1.9197 mm in bill length.
+
+### 2. The slope estimates are all different from zero since teh 95% CI for all of them are positive and don't include 0. a_speciesAdelie (16.8320, 28.9194), a_speciesChinstrap (4.9014, 22.9206), b_speciesAdelie(0.5368, 1.1963), b_speciesChinstrap(1.4063, 2.4347).
+
+### 3. There is some overlap between the two predictor histograms, but overall they are distinct in their shape and placement on the x-axis. The lines of the predicted values also don't overlap, showing that the values are different.
+
+## Q2.7) From interactive model waic = 1026.7, looic = 1026.7. From additive model waic = 1036.3, looic = 1036.3. The interactive model has better predictor power, having a lower value for both waic and psis.
+
+```{r}
+waic(m.bl.bd.spp.interactive)
+waic(m.bl.bd.spp.additive)
+loo(m.bl.bd.spp.interactive)
+loo(m.bl.bd.spp.additive)
+```
+
+```{r}
+m.bl.bd.spp.additive <-
+  brm(data = penguins.AC, #Give the model the tibble
+      family = gaussian, #Tell model what type of distribution
+      bill_length_mm ~ 0 + species + bill_depth_mm, #Specifying the model
+      iter = 2000, warmup = 1000, chains = 4, cores = 4, #Markov chain parameters
+      seed = 4, #Determines which random numbers
+      file = 'output/m.bl.bd.spp.additive') #saves it as an output
+
+print(m.bl.bd.spp.additive, digits = 4)
+plot(m.bl.bd.spp.additive)
+```
