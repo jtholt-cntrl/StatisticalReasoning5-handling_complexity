@@ -234,13 +234,6 @@ model_posterior_samples2 %>%
 ## Q2.7) From interactive model waic = 1026.7, looic = 1026.7. From additive model waic = 1036.3, looic = 1036.3. The interactive model has better predictor power, having a lower value for both waic and psis.
 
 ```{r}
-waic(m.bl.bd.spp.interactive)
-waic(m.bl.bd.spp.additive)
-loo(m.bl.bd.spp.interactive)
-loo(m.bl.bd.spp.additive)
-```
-
-```{r}
 m.bl.bd.spp.additive <-
   brm(data = penguins.AC, #Give the model the tibble
       family = gaussian, #Tell model what type of distribution
@@ -252,3 +245,11 @@ m.bl.bd.spp.additive <-
 print(m.bl.bd.spp.additive, digits = 4)
 plot(m.bl.bd.spp.additive)
 ```
+s
+```{r}
+waic(m.bl.bd.spp.interactive)
+waic(m.bl.bd.spp.additive)
+loo(m.bl.bd.spp.interactive)
+loo(m.bl.bd.spp.additive)
+```
+
